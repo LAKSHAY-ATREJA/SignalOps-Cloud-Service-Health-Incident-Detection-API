@@ -30,6 +30,6 @@ asyncio_mode = "auto"
 line-length = 100
 
 [project.urls]
-Homepage = "https://github.com/LAKSHAYATREJA/signalops"
-Repository = "https://github.com/LAKSHAYATREJA/signalops"
-Issues = "https://github.com/LAKSHAYATREJA/signalops/issues"
+Homepage = "https://github.com/LAKSHAY-ATREJA/SignalOps-Cloud-Service-Health-Incident-Detection-API"
+Repository = "https://github.com/LAKSHAY-ATREJA/SignalOps-Cloud-Service-Health-Incident-Detection-API"
+Issues = "https://github.com/LAKSHAY-ATREJA/SignalOps-Cloud-Service-Health-Incident-Detection-API/issues"
