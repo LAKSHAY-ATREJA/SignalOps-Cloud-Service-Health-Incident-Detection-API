@@ -1,6 +1,6 @@
 # SignalOps
 
-[![CI](https://github.com/LAKSHAYATREJA/signalops/actions/workflows/ci.yml/badge.svg)](https://github.com/LAKSHAYATREJA/signalops/actions/workflows/ci.yml)
+[![CI](https://github.com/LAKSHAY-ATREJA/SignalOps-Cloud-Service-Health-Incident-Detection-API/actions/workflows/ci.yml/badge.svg)](https://github.com/LAKSHAY-ATREJA/SignalOps-Cloud-Service-Health-Incident-Detection-API/actions/workflows/ci.yml)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
@@ -128,7 +128,7 @@ signalops/
 Clone the repository and enter the project directory:
 
 ```bash
-git clone https://github.com/LAKSHAYATREJA/signalops.git
+git clone https://github.com/LAKSHAY-ATREJA/SignalOps-Cloud-Service-Health-Incident-Detection-API.git
 cd signalops
 ```
 
@@ -307,7 +307,7 @@ See [CHANGELOG.md](CHANGELOG.md) for release history.
 
 **Lakshay Atreja**
 
-GitHub: [@LAKSHAYATREJA](https://github.com/LAKSHAYATREJA)
+GitHub: [@LAKSHAY-ATREJA](https://github.com/LAKSHAY-ATREJA)
 
 ## License
 
