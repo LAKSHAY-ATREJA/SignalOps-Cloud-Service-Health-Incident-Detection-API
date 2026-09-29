@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+from typing import Annotated
 
 from fastapi import Depends, FastAPI, HTTPException, Query, status
 from sqlalchemy import select
@@ -9,6 +10,9 @@ from .database import Base, engine, get_session
 from .detector import detect_anomaly, severity_for
 from .models import Incident, Metric, Service
 from .schemas import IncidentOut, MetricCreate, MetricOut, ServiceCreate, ServiceOut
+
+SessionDep = Annotated[AsyncSession, Depends(get_session)]
+ServiceFilter = Annotated[int | None, Query()]
 
 
 @asynccontextmanager
@@ -32,7 +36,7 @@ async def health() -> dict[str, str]:
 
 
 @app.post("/services", response_model=ServiceOut, status_code=status.HTTP_201_CREATED)
-async def create_service(payload: ServiceCreate, session: AsyncSession = Depends(get_session)):
+async def create_service(payload: ServiceCreate, session: SessionDep):
     existing = await session.scalar(select(Service).where(Service.name == payload.name))
     if existing:
         raise HTTPException(status_code=409, detail="Service already exists")
@@ -45,7 +49,7 @@ async def create_service(payload: ServiceCreate, session: AsyncSession = Depends
 
 
 @app.get("/services", response_model=list[ServiceOut])
-async def list_services(session: AsyncSession = Depends(get_session)):
+async def list_services(session: SessionDep):
     result = await session.scalars(select(Service).order_by(Service.name))
     return list(result)
 
@@ -54,7 +58,7 @@ async def list_services(session: AsyncSession = Depends(get_session)):
 async def ingest_metric(
     service_id: int,
     payload: MetricCreate,
-    session: AsyncSession = Depends(get_session),
+    session: SessionDep,
 ):
     service = await session.get(Service, service_id)
     if not service:
@@ -72,7 +76,11 @@ async def ingest_metric(
     session.add(metric)
 
     if len(history) >= settings.minimum_samples:
-        anomalous, mean, z_score = detect_anomaly(history, payload.value, settings.incident_z_threshold)
+        anomalous, mean, z_score = detect_anomaly(
+            history,
+            payload.value,
+            settings.incident_z_threshold,
+        )
         if anomalous:
             session.add(
                 Incident(
@@ -92,8 +100,8 @@ async def ingest_metric(
 
 @app.get("/incidents", response_model=list[IncidentOut])
 async def list_incidents(
-    service_id: int | None = Query(default=None),
-    session: AsyncSession = Depends(get_session),
+    session: SessionDep,
+    service_id: ServiceFilter = None,
 ):
     query = select(Incident).order_by(Incident.created_at.desc())
     if service_id is not None:
@@ -103,7 +111,7 @@ async def list_incidents(
 
 
 @app.patch("/incidents/{incident_id}/resolve", response_model=IncidentOut)
-async def resolve_incident(incident_id: int, session: AsyncSession = Depends(get_session)):
+async def resolve_incident(incident_id: int, session: SessionDep):
     incident = await session.get(Incident, incident_id)
     if not incident:
         raise HTTPException(status_code=404, detail="Incident not found")
