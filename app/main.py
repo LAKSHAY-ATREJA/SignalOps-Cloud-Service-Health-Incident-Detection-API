@@ -1,24 +1,32 @@
 from contextlib import asynccontextmanager
 from typing import Annotated
 
-from fastapi import Depends, FastAPI, HTTPException, Query, status
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Response, status
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .config import settings
-from .database import Base, engine, get_session
+from .database import get_session
 from .detector import detect_anomaly, severity_for
 from .models import Incident, Metric, Service
 from .schemas import IncidentOut, MetricCreate, MetricOut, ServiceCreate, ServiceOut
 
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 ServiceFilter = Annotated[int | None, Query()]
+IdempotencyKey = Annotated[
+    str,
+    Header(
+        alias="Idempotency-Key",
+        min_length=8,
+        max_length=128,
+        description="Stable producer event identifier; unique within a service.",
+    ),
+]
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
     yield
 
 
@@ -54,15 +62,42 @@ async def list_services(session: SessionDep):
     return list(result)
 
 
-@app.post("/services/{service_id}/metrics", response_model=MetricOut, status_code=201)
+@app.post(
+    "/services/{service_id}/metrics",
+    response_model=MetricOut,
+    status_code=status.HTTP_201_CREATED,
+    responses={
+        status.HTTP_200_OK: {"description": "Idempotent replay of an existing metric"},
+        status.HTTP_409_CONFLICT: {
+            "description": "Idempotency key was already used for a different payload"
+        },
+    },
+)
 async def ingest_metric(
     service_id: int,
     payload: MetricCreate,
+    response: Response,
+    idempotency_key: IdempotencyKey,
     session: SessionDep,
 ):
     service = await session.get(Service, service_id)
     if not service:
         raise HTTPException(status_code=404, detail="Service not found")
+
+    existing = await session.scalar(
+        select(Metric).where(
+            Metric.service_id == service_id,
+            Metric.idempotency_key == idempotency_key,
+        )
+    )
+    if existing:
+        if existing.metric_name != payload.metric_name or existing.value != payload.value:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Idempotency key was already used for a different metric payload",
+            )
+        response.status_code = status.HTTP_200_OK
+        return existing
 
     history_result = await session.scalars(
         select(Metric.value)
@@ -72,28 +107,56 @@ async def ingest_metric(
     )
     history = list(history_result)
 
-    metric = Metric(service_id=service_id, **payload.model_dump())
+    metric = Metric(
+        service_id=service_id,
+        idempotency_key=idempotency_key,
+        **payload.model_dump(),
+    )
     session.add(metric)
+    try:
+        await session.flush()
 
-    if len(history) >= settings.minimum_samples:
-        anomalous, mean, z_score = detect_anomaly(
-            history,
-            payload.value,
-            settings.incident_z_threshold,
-        )
-        if anomalous:
-            session.add(
-                Incident(
-                    service_id=service_id,
-                    metric_name=payload.metric_name,
-                    observed_value=payload.value,
-                    baseline_mean=mean,
-                    z_score=z_score,
-                    severity=severity_for(z_score),
-                )
+        if len(history) >= settings.minimum_samples:
+            anomalous, mean, z_score = detect_anomaly(
+                history,
+                payload.value,
+                settings.incident_z_threshold,
             )
-
-    await session.commit()
+            if anomalous:
+                session.add(
+                    Incident(
+                        service_id=service_id,
+                        metric_id=metric.id,
+                        metric_name=payload.metric_name,
+                        observed_value=payload.value,
+                        baseline_mean=mean,
+                        z_score=z_score,
+                        severity=severity_for(z_score),
+                    )
+                )
+        await session.commit()
+    except IntegrityError:
+        # A concurrent request may win the unique-key race after the initial
+        # lookup. Roll back the whole transaction (including any incident),
+        # then return the committed winner only when its payload is identical.
+        await session.rollback()
+        existing = await session.scalar(
+            select(Metric).where(
+                Metric.service_id == service_id,
+                Metric.idempotency_key == idempotency_key,
+            )
+        )
+        if (
+            existing is None
+            or existing.metric_name != payload.metric_name
+            or existing.value != payload.value
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Idempotency key conflict",
+            )
+        response.status_code = status.HTTP_200_OK
+        return existing
     await session.refresh(metric)
     return metric
 
@@ -119,3 +182,4 @@ async def resolve_incident(incident_id: int, session: SessionDep):
     await session.commit()
     await session.refresh(incident)
     return incident
+

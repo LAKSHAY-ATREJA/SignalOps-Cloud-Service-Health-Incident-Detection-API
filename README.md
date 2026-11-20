@@ -24,11 +24,13 @@ SignalOps provides a simple monitoring pipeline:
 - Asynchronous REST API built with FastAPI
 - Service registration and discovery
 - Generic telemetry ingestion for arbitrary metric names
+- Idempotent ingestion using producer-supplied event keys
 - Rolling 20-sample baselines per service and metric
 - Configurable z-score anomaly detection
 - Automatic `medium`, `high`, and `critical` severity classification
 - Incident listing, filtering, and resolution
 - SQLAlchemy 2.x asynchronous persistence
+- Alembic schema migrations exercised in CI and container startup
 - PostgreSQL support for containerised deployments
 - SQLite support for zero-configuration local development
 - Docker and Docker Compose setup
@@ -158,6 +160,12 @@ Install dependencies:
 pip install -e ".[dev]"
 ```
 
+Apply the database schema:
+
+```bash
+alembic upgrade head
+```
+
 Start the API:
 
 ```bash
@@ -233,6 +241,7 @@ curl -X POST http://localhost:8000/services \
 for value in 98 101 100 99 102 100 101 99; do
   curl -X POST http://localhost:8000/services/1/metrics \
     -H "Content-Type: application/json" \
+    -H "Idempotency-Key: baseline-$value-$(date +%s%N)" \
     -d "{\"metric_name\":\"latency_ms\",\"value\":$value}"
 done
 ```
@@ -242,6 +251,7 @@ done
 ```bash
 curl -X POST http://localhost:8000/services/1/metrics \
   -H "Content-Type: application/json" \
+  -H "Idempotency-Key: checkout-latency-spike-001" \
   -d '{"metric_name":"latency_ms","value":180}'
 ```
 
@@ -268,6 +278,16 @@ z = |observed_value - baseline_mean| / baseline_standard_deviation
 If the z-score crosses the configured incident threshold, SignalOps persists a new incident. Higher z-scores result in higher incident severity.
 
 The detector is intentionally transparent and deterministic. It is easy to test, reason about, and replace later with more advanced methods such as EWMA, Isolation Forest, or time-series models without changing the API contract.
+
+### Delivery semantics
+
+Metric producers must send an `Idempotency-Key` header (8–128 characters).
+Within one service, replaying the same key and payload returns the original
+metric with HTTP 200 and does not create another incident. Reusing the key for
+a different payload returns HTTP 409. A database uniqueness constraint closes
+the race between concurrent retries; the metric and its incident commit in one
+transaction. This provides at-most-once persistence per producer key, not
+exactly-once delivery across arbitrary upstream systems.
 
 ## Quality checks
 
@@ -312,3 +332,4 @@ GitHub: [@LAKSHAY-ATREJA](https://github.com/LAKSHAY-ATREJA)
 ## License
 
 Released under the [MIT License](LICENSE).
+
