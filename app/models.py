@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, Float, ForeignKey, String, func
+from sqlalchemy import DateTime, Float, ForeignKey, String, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .database import Base
@@ -20,11 +20,17 @@ class Service(Base):
 
 class Metric(Base):
     __tablename__ = "metrics"
+    __table_args__ = (
+        UniqueConstraint(
+            "service_id", "idempotency_key", name="uq_metrics_service_idempotency_key"
+        ),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     service_id: Mapped[int] = mapped_column(ForeignKey("services.id"), index=True)
     metric_name: Mapped[str] = mapped_column(String(80), index=True)
     value: Mapped[float] = mapped_column(Float)
+    idempotency_key: Mapped[str] = mapped_column(String(128))
     recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
 
     service: Mapped[Service] = relationship(back_populates="metrics")
@@ -35,6 +41,7 @@ class Incident(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     service_id: Mapped[int] = mapped_column(ForeignKey("services.id"), index=True)
+    metric_id: Mapped[int] = mapped_column(ForeignKey("metrics.id"), unique=True)
     metric_name: Mapped[str] = mapped_column(String(80))
     observed_value: Mapped[float] = mapped_column(Float)
     baseline_mean: Mapped[float] = mapped_column(Float)
@@ -44,3 +51,4 @@ class Incident(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     service: Mapped[Service] = relationship(back_populates="incidents")
+

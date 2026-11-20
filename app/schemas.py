@@ -15,8 +15,10 @@ class ServiceOut(ServiceCreate):
 
 
 class MetricCreate(BaseModel):
-    metric_name: str = Field(min_length=2, max_length=80)
-    value: float
+    metric_name: str = Field(
+        min_length=2, max_length=80, pattern=r"^[a-zA-Z0-9_.-]+$"
+    )
+    value: float = Field(allow_inf_nan=False)
 
 
 class MetricOut(BaseModel):
@@ -24,6 +26,7 @@ class MetricOut(BaseModel):
     service_id: int
     metric_name: str
     value: float
+    idempotency_key: str
     recorded_at: datetime
     model_config = ConfigDict(from_attributes=True)
 
@@ -31,6 +34,7 @@ class MetricOut(BaseModel):
 class IncidentOut(BaseModel):
     id: int
     service_id: int
+    metric_id: int
     metric_name: str
     observed_value: float
     baseline_mean: float
@@ -39,3 +43,4 @@ class IncidentOut(BaseModel):
     status: str
     created_at: datetime
     model_config = ConfigDict(from_attributes=True)
+

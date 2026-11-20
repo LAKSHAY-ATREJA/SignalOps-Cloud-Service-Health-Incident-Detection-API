@@ -13,4 +13,8 @@ jobs:
           python-version: "3.12"
       - run: pip install -e ".[dev]"
       - run: ruff check .
+      - run: alembic upgrade head
+        env:
+          SIGNALOPS_DATABASE_URL: sqlite+aiosqlite:///./ci-migration.db
       - run: pytest -q
+
