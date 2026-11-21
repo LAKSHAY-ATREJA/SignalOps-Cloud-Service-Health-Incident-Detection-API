@@ -12,6 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from .auth import require_api_key
 from .config import settings
 from .database import check_database, get_session
 from .detector import detect_anomaly, severity_for
@@ -20,6 +21,7 @@ from .observability import HTTP_DURATION, HTTP_REQUESTS, INCIDENTS_CREATED, INGE
 from .schemas import IncidentOut, MetricCreate, MetricOut, ServiceCreate, ServiceOut
 
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
+Authenticated = Annotated[None, Depends(require_api_key)]
 ServiceFilter = Annotated[int | None, Query()]
 IdempotencyKey = Annotated[
     str,
@@ -89,12 +91,12 @@ async def readiness() -> dict[str, str]:
 
 
 @app.get("/metrics", include_in_schema=False)
-async def metrics() -> Response:
+async def metrics(_: Authenticated) -> Response:
     return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 
 @app.post("/services", response_model=ServiceOut, status_code=status.HTTP_201_CREATED)
-async def create_service(payload: ServiceCreate, session: SessionDep):
+async def create_service(payload: ServiceCreate, session: SessionDep, _: Authenticated):
     existing = await session.scalar(select(Service).where(Service.name == payload.name))
     if existing:
         raise HTTPException(status_code=409, detail="Service already exists")
@@ -107,7 +109,7 @@ async def create_service(payload: ServiceCreate, session: SessionDep):
 
 
 @app.get("/services", response_model=list[ServiceOut])
-async def list_services(session: SessionDep):
+async def list_services(session: SessionDep, _: Authenticated):
     result = await session.scalars(select(Service).order_by(Service.name))
     return list(result)
 
@@ -129,6 +131,7 @@ async def ingest_metric(
     response: Response,
     idempotency_key: IdempotencyKey,
     session: SessionDep,
+    _: Authenticated,
 ):
     service = await session.get(Service, service_id)
     if not service:
@@ -221,6 +224,7 @@ async def ingest_metric(
 @app.get("/incidents", response_model=list[IncidentOut])
 async def list_incidents(
     session: SessionDep,
+    _: Authenticated,
     service_id: ServiceFilter = None,
 ):
     query = select(Incident).order_by(Incident.created_at.desc())
@@ -231,7 +235,7 @@ async def list_incidents(
 
 
 @app.patch("/incidents/{incident_id}/resolve", response_model=IncidentOut)
-async def resolve_incident(incident_id: int, session: SessionDep):
+async def resolve_incident(incident_id: int, session: SessionDep, _: Authenticated):
     incident = await session.get(Incident, incident_id)
     if not incident:
         raise HTTPException(status_code=404, detail="Incident not found")

@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-11-22 — Fail-closed API authorization
+
+- Added optional API-key authorization for API and metrics routes.
+- Store only SHA-256 key digests in configuration and compare in constant time.
+- Return 503 for required-but-invalid authentication configuration.
+- Added authorization, invalid-key and misconfiguration integration tests.
+
 ## 2026-11-21 — PostgreSQL concurrency verification
 
 - Added a real PostgreSQL 16 service to CI and run Alembic against it.
