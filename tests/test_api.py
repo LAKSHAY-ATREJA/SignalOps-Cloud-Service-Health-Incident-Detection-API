@@ -1,5 +1,7 @@
 import httpx
+import pytest
 import pytest_asyncio
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.database import Base, get_session
@@ -108,3 +110,33 @@ async def test_anomalous_replay_creates_exactly_one_incident(client, service_id)
     assert incidents.status_code == 200
     assert len(incidents.json()) == 1
     assert incidents.json()[0]["observed_value"] == 140.0
+
+
+async def test_operational_endpoints_expose_readiness_metrics_and_request_ids(client):
+    live = await client.get("/health/live", headers={"X-Request-ID": "probe-123"})
+    ready = await client.get("/health/ready")
+    metrics = await client.get("/metrics")
+
+    assert live.status_code == 200
+    assert live.headers["X-Request-ID"] == "probe-123"
+    assert ready.json() == {"status": "ready"}
+    assert "signalops_http_requests_total" in metrics.text
+    assert 'route="/health/live"' in metrics.text
+
+
+async def test_readiness_fails_closed_when_database_is_unavailable(client, monkeypatch):
+    async def unavailable():
+        raise OperationalError("SELECT 1", {}, RuntimeError("database offline"))
+
+    monkeypatch.setattr("app.main.check_database", unavailable)
+    response = await client.get("/health/ready")
+
+    assert response.status_code == 503
+    assert response.json() == {"detail": "Database unavailable"}
+
+
+@pytest.mark.parametrize("request_id", ["contains spaces", "x" * 65])
+async def test_invalid_request_id_is_replaced(client, request_id):
+    response = await client.get("/health/live", headers={"X-Request-ID": request_id})
+    assert response.status_code == 200
+    assert response.headers["X-Request-ID"] != request_id

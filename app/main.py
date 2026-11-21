@@ -1,15 +1,22 @@
+import json
+import logging
+import re
+import time
+import uuid
 from contextlib import asynccontextmanager
 from typing import Annotated
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Query, Response, status
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Response, status
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .config import settings
-from .database import get_session
+from .database import check_database, get_session
 from .detector import detect_anomaly, severity_for
 from .models import Incident, Metric, Service
+from .observability import HTTP_DURATION, HTTP_REQUESTS, INCIDENTS_CREATED, INGESTION_OUTCOMES
 from .schemas import IncidentOut, MetricCreate, MetricOut, ServiceCreate, ServiceOut
 
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
@@ -23,6 +30,8 @@ IdempotencyKey = Annotated[
         description="Stable producer event identifier; unique within a service.",
     ),
 ]
+LOGGER = logging.getLogger("signalops.http")
+REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9._:-]{1,64}$")
 
 
 @asynccontextmanager
@@ -38,9 +47,50 @@ app = FastAPI(
 )
 
 
-@app.get("/health")
-async def health() -> dict[str, str]:
+@app.middleware("http")
+async def observe_request(request: Request, call_next):
+    supplied_id = request.headers.get("X-Request-ID", "")
+    request_id = supplied_id if REQUEST_ID_PATTERN.fullmatch(supplied_id) else str(uuid.uuid4())
+    started = time.perf_counter()
+    response = await call_next(request)
+    elapsed = time.perf_counter() - started
+    route = getattr(request.scope.get("route"), "path", "unmatched")
+    HTTP_REQUESTS.labels(request.method, route, str(response.status_code)).inc()
+    HTTP_DURATION.labels(request.method, route).observe(elapsed)
+    response.headers["X-Request-ID"] = request_id
+    LOGGER.info(
+        json.dumps(
+            {
+                "event": "http_request",
+                "request_id": request_id,
+                "method": request.method,
+                "route": route,
+                "status": response.status_code,
+                "duration_ms": round(elapsed * 1000, 3),
+            }
+        )
+    )
+    return response
+
+
+@app.get("/health", include_in_schema=False)
+@app.get("/health/live")
+async def liveness() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/health/ready")
+async def readiness() -> dict[str, str]:
+    try:
+        await check_database()
+    except SQLAlchemyError as exc:
+        raise HTTPException(status_code=503, detail="Database unavailable") from exc
+    return {"status": "ready"}
+
+
+@app.get("/metrics", include_in_schema=False)
+async def metrics() -> Response:
+    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 
 @app.post("/services", response_model=ServiceOut, status_code=status.HTTP_201_CREATED)
@@ -92,10 +142,12 @@ async def ingest_metric(
     )
     if existing:
         if existing.metric_name != payload.metric_name or existing.value != payload.value:
+            INGESTION_OUTCOMES.labels("conflict").inc()
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Idempotency key was already used for a different metric payload",
             )
+        INGESTION_OUTCOMES.labels("replay").inc()
         response.status_code = status.HTTP_200_OK
         return existing
 
@@ -123,6 +175,7 @@ async def ingest_metric(
                 settings.incident_z_threshold,
             )
             if anomalous:
+                severity = severity_for(z_score)
                 session.add(
                     Incident(
                         service_id=service_id,
@@ -131,9 +184,10 @@ async def ingest_metric(
                         observed_value=payload.value,
                         baseline_mean=mean,
                         z_score=z_score,
-                        severity=severity_for(z_score),
+                        severity=severity,
                     )
                 )
+                INCIDENTS_CREATED.labels(severity).inc()
         await session.commit()
     except IntegrityError:
         # A concurrent request may win the unique-key race after the initial
@@ -151,12 +205,15 @@ async def ingest_metric(
             or existing.metric_name != payload.metric_name
             or existing.value != payload.value
         ):
+            INGESTION_OUTCOMES.labels("conflict").inc()
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Idempotency key conflict",
             )
+        INGESTION_OUTCOMES.labels("replay").inc()
         response.status_code = status.HTTP_200_OK
         return existing
+    INGESTION_OUTCOMES.labels("created").inc()
     await session.refresh(metric)
     return metric
 

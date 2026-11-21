@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-11-21 — Operability and failure visibility
+
+- Added separate liveness and database-backed readiness probes.
+- Added bounded-cardinality Prometheus metrics for HTTP traffic, ingestion outcomes and incidents.
+- Added validated correlation IDs and structured request logs.
+- Added failure-path tests for database unavailability and invalid request identifiers.
+
 All notable changes to SignalOps are documented in this file.
 
 The project follows [Semantic Versioning](https://semver.org/).
