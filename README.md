@@ -41,6 +41,7 @@ SignalOps provides a simple monitoring pipeline:
 - Pytest coverage for the core detector
 - Ruff linting
 - GitHub Actions CI
+- PostgreSQL migration and concurrent idempotency integration testing in CI
 
 ## Architecture
 
@@ -314,7 +315,6 @@ Both checks also run automatically in GitHub Actions on pushes and pull requests
 
 Planned directions include:
 
-- Prometheus-compatible metrics endpoint
 - Webhook and Slack-style alert delivery
 - API-key authentication and rate limiting
 - Redis-backed ingestion queue

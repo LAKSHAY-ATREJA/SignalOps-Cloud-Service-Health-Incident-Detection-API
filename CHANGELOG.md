@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-11-21 — PostgreSQL concurrency verification
+
+- Added a real PostgreSQL 16 service to CI and run Alembic against it.
+- Added an eight-request concurrent replay test proving one create and seven identical replays.
+- Kept the integration test explicitly gated by a dedicated test database URL.
+
 ## 2026-11-21 — Operability and failure visibility
 
 - Added separate liveness and database-backed readiness probes.
