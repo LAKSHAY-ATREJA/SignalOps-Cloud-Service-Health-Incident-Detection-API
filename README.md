@@ -32,6 +32,7 @@ SignalOps provides a simple monitoring pipeline:
 - Liveness and database-backed readiness probes
 - Prometheus request, latency, ingestion-outcome, and incident counters
 - Correlation IDs and structured request logs using normalized route templates
+- Optional fail-closed API-key authorization using configured SHA-256 digests
 - SQLAlchemy 2.x asynchronous persistence
 - Alembic schema migrations exercised in CI and container startup
 - PostgreSQL support for containerised deployments
@@ -217,6 +218,14 @@ cp .env.example .env
 ```
 
 Default values allow the application to run locally without additional configuration.
+
+Local demo mode leaves authentication disabled. For a shared deployment, set
+`SIGNALOPS_AUTH_REQUIRED=true` and configure `SIGNALOPS_API_KEY_SHA256` with one
+or more comma-separated lowercase SHA-256 digests. Clients send the raw key in
+`X-API-Key`; SignalOps hashes it and uses constant-time digest comparison. The
+service returns 503 rather than silently disabling security when authentication
+is required but hashes are missing or malformed. Health probes remain public;
+API and metrics routes require the key.
 
 ## API
 

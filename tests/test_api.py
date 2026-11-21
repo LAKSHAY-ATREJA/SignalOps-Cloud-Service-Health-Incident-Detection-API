@@ -1,3 +1,5 @@
+import hashlib
+
 import httpx
 import pytest
 import pytest_asyncio
@@ -140,3 +142,30 @@ async def test_invalid_request_id_is_replaced(client, request_id):
     response = await client.get("/health/live", headers={"X-Request-ID": request_id})
     assert response.status_code == 200
     assert response.headers["X-Request-ID"] != request_id
+
+
+async def test_api_key_authentication_fails_closed(client, monkeypatch):
+    digest = hashlib.sha256(b"portfolio-test-key").hexdigest()
+    monkeypatch.setattr("app.auth.settings.auth_required", True)
+    monkeypatch.setattr("app.auth.settings.api_key_sha256", digest)
+
+    missing = await client.get("/services")
+    invalid = await client.get("/services", headers={"X-API-Key": "wrong"})
+    allowed = await client.get(
+        "/services", headers={"X-API-Key": "portfolio-test-key"}
+    )
+    live = await client.get("/health/live")
+
+    assert missing.status_code == 401
+    assert missing.headers["WWW-Authenticate"] == "ApiKey"
+    assert invalid.status_code == 401
+    assert allowed.status_code == 200
+    assert live.status_code == 200
+
+
+async def test_required_auth_without_valid_hashes_returns_503(client, monkeypatch):
+    monkeypatch.setattr("app.auth.settings.auth_required", True)
+    monkeypatch.setattr("app.auth.settings.api_key_sha256", "not-a-digest")
+    response = await client.get("/services", headers={"X-API-Key": "any-key"})
+    assert response.status_code == 503
+    assert response.json() == {"detail": "Authentication is misconfigured"}
