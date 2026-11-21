@@ -29,6 +29,9 @@ SignalOps provides a simple monitoring pipeline:
 - Configurable z-score anomaly detection
 - Automatic `medium`, `high`, and `critical` severity classification
 - Incident listing, filtering, and resolution
+- Liveness and database-backed readiness probes
+- Prometheus request, latency, ingestion-outcome, and incident counters
+- Correlation IDs and structured request logs using normalized route templates
 - SQLAlchemy 2.x asynchronous persistence
 - Alembic schema migrations exercised in CI and container startup
 - PostgreSQL support for containerised deployments
@@ -218,7 +221,9 @@ Default values allow the application to run locally without additional configura
 
 | Method | Endpoint | Purpose |
 |---|---|---|
-| `GET` | `/health` | Health/liveness check |
+| `GET` | `/health/live` | Process liveness check (`/health` is retained as an alias) |
+| `GET` | `/health/ready` | Database-backed readiness check; returns 503 when unavailable |
+| `GET` | `/metrics` | Prometheus-format operational metrics |
 | `POST` | `/services` | Register a monitored service |
 | `GET` | `/services` | List registered services |
 | `POST` | `/services/{service_id}/metrics` | Ingest a metric observation |
