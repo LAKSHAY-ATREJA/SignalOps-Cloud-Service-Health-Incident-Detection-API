@@ -247,6 +247,10 @@ with `type`, `title`, `status`, `detail`, `instance` and `request_id`. Validatio
 responses also include sanitized `location`, `message` and `code` entries; raw
 request values and internal exception text are not returned.
 
+Database failures use the same correlated problem format, return 503 with a
+five-second `Retry-After` hint, and log only the request ID plus exception class.
+Driver messages and connection details are not returned to callers.
+
 Incident listing defaults to 50 newest-first rows and caps requests at 100.
 Pass the final incident `id` from one response as `before_id` to request the
 next stable page without the drift and scan cost of offset pagination.

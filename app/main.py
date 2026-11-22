@@ -120,6 +120,27 @@ async def handle_http_error(request: Request, exc: HTTPException) -> JSONRespons
     return problem_response(request, exc.status_code, detail, headers=exc.headers)
 
 
+@app.exception_handler(SQLAlchemyError)
+async def handle_database_error(
+    request: Request, exc: SQLAlchemyError
+) -> JSONResponse:
+    LOGGER.error(
+        json.dumps(
+            {
+                "event": "database_error",
+                "request_id": getattr(request.state, "request_id", None),
+                "exception_type": type(exc).__name__,
+            }
+        )
+    )
+    return problem_response(
+        request,
+        status.HTTP_503_SERVICE_UNAVAILABLE,
+        "Database operation failed",
+        headers={"Retry-After": "5"},
+    )
+
+
 @app.exception_handler(RequestValidationError)
 async def handle_validation_error(
     request: Request, exc: RequestValidationError
