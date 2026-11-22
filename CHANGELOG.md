@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-11-22 — Reasoned incident resolution
+
+- Persisted a bounded operator reason with each incident resolution.
+- Made identical resolution retries idempotent and rejected conflicting reasons.
+- Added a forward/backward Alembic migration and concurrent PostgreSQL coverage.
+
 ## 2026-11-22 — Bounded incident queries
 
 - Added newest-first keyset pagination to incident listing using `before_id`.

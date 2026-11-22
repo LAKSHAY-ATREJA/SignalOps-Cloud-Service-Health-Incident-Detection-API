@@ -50,6 +50,7 @@ class Incident(Base):
     status: Mapped[str] = mapped_column(String(20), default="open")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    resolution_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
     service: Mapped[Service] = relationship(back_populates="incidents")
 

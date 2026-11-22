@@ -214,7 +214,9 @@ async def test_required_auth_without_valid_hashes_returns_503(client, monkeypatc
 
 async def test_not_found_problem_is_correlated_without_internal_details(client):
     response = await client.patch(
-        "/incidents/999/resolve", headers={"X-Request-ID": "incident-request-123"}
+        "/incidents/999/resolve",
+        json={"reason": "Investigated and found no matching incident"},
+        headers={"X-Request-ID": "incident-request-123"},
     )
     body = response.json()
     assert response.status_code == 404
@@ -245,10 +247,24 @@ async def test_incident_resolution_is_idempotent_and_preserves_audit_time(
     )
     incident_id = (await client.get("/incidents")).json()[0]["id"]
 
-    first = await client.patch(f"/incidents/{incident_id}/resolve")
-    replay = await client.patch(f"/incidents/{incident_id}/resolve")
+    blank = await client.patch(
+        f"/incidents/{incident_id}/resolve", json={"reason": "   "}
+    )
+    payload = {"reason": "Database failover completed and latency recovered"}
+    first = await client.patch(f"/incidents/{incident_id}/resolve", json=payload)
+    replay = await client.patch(f"/incidents/{incident_id}/resolve", json=payload)
+    conflict = await client.patch(
+        f"/incidents/{incident_id}/resolve",
+        json={"reason": "A different operator explanation"},
+    )
 
+    assert blank.status_code == 422
     assert first.status_code == replay.status_code == 200
     assert first.json()["status"] == "resolved"
     assert first.json()["resolved_at"] is not None
+    assert first.json()["resolution_reason"] == payload["reason"]
     assert replay.json()["resolved_at"] == first.json()["resolved_at"]
+    assert conflict.status_code == 409
+    assert conflict.json()["detail"] == (
+        "Incident was already resolved with a different reason"
+    )
