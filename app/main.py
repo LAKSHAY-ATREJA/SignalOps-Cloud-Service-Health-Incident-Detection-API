@@ -11,7 +11,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Res
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -292,11 +292,15 @@ async def list_incidents(
 
 @app.patch("/incidents/{incident_id}/resolve", response_model=IncidentOut)
 async def resolve_incident(incident_id: int, session: SessionDep, _: Authenticated):
-    incident = await session.get(Incident, incident_id)
+    incident = await session.scalar(
+        select(Incident).where(Incident.id == incident_id).with_for_update()
+    )
     if not incident:
         raise HTTPException(status_code=404, detail="Incident not found")
-    incident.status = "resolved"
-    await session.commit()
-    await session.refresh(incident)
+    if incident.status != "resolved":
+        incident.status = "resolved"
+        incident.resolved_at = func.now()
+        await session.commit()
+        await session.refresh(incident)
     return incident
 

@@ -193,3 +193,28 @@ async def test_not_found_problem_is_correlated_without_internal_details(client):
         "instance": "/incidents/999/resolve",
         "request_id": "incident-request-123",
     }
+
+
+async def test_incident_resolution_is_idempotent_and_preserves_audit_time(
+    client, service_id
+):
+    for index, value in enumerate([99.0, 100.0, 101.0, 99.0, 100.0]):
+        await client.post(
+            f"/services/{service_id}/metrics",
+            json={"metric_name": "latency_ms", "value": value},
+            headers={"Idempotency-Key": f"resolve-baseline-{index:04d}"},
+        )
+    await client.post(
+        f"/services/{service_id}/metrics",
+        json={"metric_name": "latency_ms", "value": 140.0},
+        headers={"Idempotency-Key": "resolve-anomaly-0001"},
+    )
+    incident_id = (await client.get("/incidents")).json()[0]["id"]
+
+    first = await client.patch(f"/incidents/{incident_id}/resolve")
+    replay = await client.patch(f"/incidents/{incident_id}/resolve")
+
+    assert first.status_code == replay.status_code == 200
+    assert first.json()["status"] == "resolved"
+    assert first.json()["resolved_at"] is not None
+    assert replay.json()["resolved_at"] == first.json()["resolved_at"]

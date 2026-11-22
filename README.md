@@ -29,6 +29,7 @@ SignalOps provides a simple monitoring pipeline:
 - Configurable z-score anomaly detection
 - Automatic `medium`, `high`, and `critical` severity classification
 - Incident listing, filtering, and resolution
+- Idempotent, row-locked incident resolution with a stable audit timestamp
 - Liveness and database-backed readiness probes
 - Prometheus request, latency, ingestion-outcome, and incident counters
 - Correlation IDs and structured request logs using normalized route templates
@@ -239,7 +240,7 @@ API and metrics routes require the key.
 | `GET` | `/services` | List registered services |
 | `POST` | `/services/{service_id}/metrics` | Ingest a metric observation |
 | `GET` | `/incidents` | List incidents, optionally filtered by service |
-| `PATCH` | `/incidents/{incident_id}/resolve` | Resolve an incident |
+| `PATCH` | `/incidents/{incident_id}/resolve` | Resolve an incident idempotently and preserve its first resolution time |
 
 Validation, authorization and domain errors use a stable problem-details shape
 with `type`, `title`, `status`, `detail`, `instance` and `request_id`. Validation

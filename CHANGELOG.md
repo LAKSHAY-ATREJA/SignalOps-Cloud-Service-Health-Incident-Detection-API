@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-11-22 — Auditable incident resolution
+
+- Added persisted incident resolution timestamps through an additive Alembic migration.
+- Made resolution idempotent and serialized concurrent updates with a database row lock.
+- Added local replay coverage and an eight-request PostgreSQL concurrency test.
+
 ## 2026-11-22 — Correlated problem responses
 
 - Added consistent `application/problem+json` responses for HTTP and validation errors.
