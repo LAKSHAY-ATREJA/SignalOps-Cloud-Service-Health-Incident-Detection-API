@@ -240,7 +240,7 @@ API and metrics routes require the key.
 | `GET` | `/services` | List registered services |
 | `POST` | `/services/{service_id}/metrics` | Ingest a metric observation |
 | `GET` | `/incidents` | List incidents with a 1–100 row limit, optional service filter and `before_id` keyset cursor |
-| `PATCH` | `/incidents/{incident_id}/resolve` | Resolve an incident idempotently and preserve its first resolution time |
+| `PATCH` | `/incidents/{incident_id}/resolve` | Resolve with a required reason; identical retries are idempotent and conflicting reasons return 409 |
 
 Validation, authorization and domain errors use a stable problem-details shape
 with `type`, `title`, `status`, `detail`, `instance` and `request_id`. Validation
@@ -250,6 +250,11 @@ request values and internal exception text are not returned.
 Incident listing defaults to 50 newest-first rows and caps requests at 100.
 Pass the final incident `id` from one response as `before_id` to request the
 next stable page without the drift and scan cost of offset pagination.
+
+Resolution requests require a 3–500 character `reason`. The first successful
+transition persists both the database timestamp and reason under a row lock.
+Retries with the same reason return the original audit record; a different
+reason returns 409 rather than rewriting incident history.
 
 ## Example workflow
 
@@ -290,7 +295,9 @@ curl http://localhost:8000/incidents
 ### 5. Resolve an incident
 
 ```bash
-curl -X PATCH http://localhost:8000/incidents/1/resolve
+curl -X PATCH http://localhost:8000/incidents/1/resolve \
+  -H 'Content-Type: application/json' \
+  -d '{"reason":"Database failover completed and latency recovered"}'
 ```
 
 ## Detection model

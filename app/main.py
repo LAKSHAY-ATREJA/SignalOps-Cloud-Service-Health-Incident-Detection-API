@@ -21,7 +21,14 @@ from .database import check_database, get_session
 from .detector import detect_anomaly, severity_for
 from .models import Incident, Metric, Service
 from .observability import HTTP_DURATION, HTTP_REQUESTS, INCIDENTS_CREATED, INGESTION_OUTCOMES
-from .schemas import IncidentOut, MetricCreate, MetricOut, ServiceCreate, ServiceOut
+from .schemas import (
+    IncidentOut,
+    IncidentResolution,
+    MetricCreate,
+    MetricOut,
+    ServiceCreate,
+    ServiceOut,
+)
 
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 Authenticated = Annotated[None, Depends(require_api_key)]
@@ -297,7 +304,12 @@ async def list_incidents(
 
 
 @app.patch("/incidents/{incident_id}/resolve", response_model=IncidentOut)
-async def resolve_incident(incident_id: int, session: SessionDep, _: Authenticated):
+async def resolve_incident(
+    incident_id: int,
+    payload: IncidentResolution,
+    session: SessionDep,
+    _: Authenticated,
+):
     incident = await session.scalar(
         select(Incident).where(Incident.id == incident_id).with_for_update()
     )
@@ -306,7 +318,13 @@ async def resolve_incident(incident_id: int, session: SessionDep, _: Authenticat
     if incident.status != "resolved":
         incident.status = "resolved"
         incident.resolved_at = func.now()
+        incident.resolution_reason = payload.reason
         await session.commit()
         await session.refresh(incident)
+    elif incident.resolution_reason != payload.reason:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Incident was already resolved with a different reason",
+        )
     return incident
 

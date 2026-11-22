@@ -81,7 +81,10 @@ async def test_postgres_serializes_concurrent_incident_resolution(postgres_clien
 
     responses = await asyncio.gather(
         *[
-            postgres_client.patch(f"/incidents/{incident_id}/resolve")
+            postgres_client.patch(
+                f"/incidents/{incident_id}/resolve",
+                json={"reason": "Automated failover restored database health"},
+            )
             for _ in range(8)
         ]
     )
@@ -89,4 +92,7 @@ async def test_postgres_serializes_concurrent_incident_resolution(postgres_clien
     assert {response.status_code for response in responses} == {200}
     assert {response.json()["status"] for response in responses} == {"resolved"}
     assert len({response.json()["resolved_at"] for response in responses}) == 1
+    assert {response.json()["resolution_reason"] for response in responses} == {
+        "Automated failover restored database health"
+    }
     assert responses[0].json()["resolved_at"] is not None
