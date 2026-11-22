@@ -239,13 +239,17 @@ API and metrics routes require the key.
 | `POST` | `/services` | Register a monitored service |
 | `GET` | `/services` | List registered services |
 | `POST` | `/services/{service_id}/metrics` | Ingest a metric observation |
-| `GET` | `/incidents` | List incidents, optionally filtered by service |
+| `GET` | `/incidents` | List incidents with a 1–100 row limit, optional service filter and `before_id` keyset cursor |
 | `PATCH` | `/incidents/{incident_id}/resolve` | Resolve an incident idempotently and preserve its first resolution time |
 
 Validation, authorization and domain errors use a stable problem-details shape
 with `type`, `title`, `status`, `detail`, `instance` and `request_id`. Validation
 responses also include sanitized `location`, `message` and `code` entries; raw
 request values and internal exception text are not returned.
+
+Incident listing defaults to 50 newest-first rows and caps requests at 100.
+Pass the final incident `id` from one response as `before_id` to request the
+next stable page without the drift and scan cost of offset pagination.
 
 ## Example workflow
 

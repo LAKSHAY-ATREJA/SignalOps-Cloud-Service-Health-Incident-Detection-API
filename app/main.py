@@ -26,6 +26,8 @@ from .schemas import IncidentOut, MetricCreate, MetricOut, ServiceCreate, Servic
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 Authenticated = Annotated[None, Depends(require_api_key)]
 ServiceFilter = Annotated[int | None, Query()]
+IncidentLimit = Annotated[int, Query(ge=1, le=100)]
+IncidentCursor = Annotated[int | None, Query(ge=1)]
 IdempotencyKey = Annotated[
     str,
     Header(
@@ -282,10 +284,14 @@ async def list_incidents(
     session: SessionDep,
     _: Authenticated,
     service_id: ServiceFilter = None,
+    limit: IncidentLimit = 50,
+    before_id: IncidentCursor = None,
 ):
-    query = select(Incident).order_by(Incident.created_at.desc())
+    query = select(Incident).order_by(Incident.id.desc()).limit(limit)
     if service_id is not None:
         query = query.where(Incident.service_id == service_id)
+    if before_id is not None:
+        query = query.where(Incident.id < before_id)
     result = await session.scalars(query)
     return list(result)
 

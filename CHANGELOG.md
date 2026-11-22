@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-11-22 — Bounded incident queries
+
+- Added newest-first keyset pagination to incident listing using `before_id`.
+- Defaulted responses to 50 rows and enforced a 100-row maximum.
+- Added API tests for page boundaries, ordering and invalid limits.
+
 ## 2026-11-22 — Auditable incident resolution
 
 - Added persisted incident resolution timestamps through an additive Alembic migration.
