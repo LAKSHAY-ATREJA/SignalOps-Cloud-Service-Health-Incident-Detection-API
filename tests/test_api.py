@@ -40,6 +40,22 @@ async def _create_service(client):
     return response.json()["id"]
 
 
+async def _create_incident(client, service_id, metric_name, key_prefix):
+    for index, value in enumerate([99.0, 100.0, 101.0, 99.0, 100.0]):
+        response = await client.post(
+            f"/services/{service_id}/metrics",
+            json={"metric_name": metric_name, "value": value},
+            headers={"Idempotency-Key": f"{key_prefix}-baseline-{index:04d}"},
+        )
+        assert response.status_code == 201
+    response = await client.post(
+        f"/services/{service_id}/metrics",
+        json={"metric_name": metric_name, "value": 140.0},
+        headers={"Idempotency-Key": f"{key_prefix}-anomaly-0001"},
+    )
+    assert response.status_code == 201
+
+
 @pytest_asyncio.fixture
 async def service_id(client):
     return await _create_service(client)
@@ -116,6 +132,24 @@ async def test_anomalous_replay_creates_exactly_one_incident(client, service_id)
     assert incidents.status_code == 200
     assert len(incidents.json()) == 1
     assert incidents.json()[0]["observed_value"] == 140.0
+
+
+async def test_incident_listing_uses_bounded_keyset_pagination(client, service_id):
+    await _create_incident(client, service_id, "latency_ms", "page-latency")
+    await _create_incident(client, service_id, "error_rate", "page-errors")
+
+    first_page = await client.get("/incidents?limit=1")
+    first_id = first_page.json()[0]["id"]
+    second_page = await client.get(f"/incidents?limit=1&before_id={first_id}")
+    invalid_limit = await client.get("/incidents?limit=101")
+
+    assert first_page.status_code == second_page.status_code == 200
+    assert len(first_page.json()) == len(second_page.json()) == 1
+    assert second_page.json()[0]["id"] < first_id
+    assert invalid_limit.status_code == 422
+    assert invalid_limit.headers["content-type"].startswith(
+        "application/problem+json"
+    )
 
 
 async def test_operational_endpoints_expose_readiness_metrics_and_request_ids(client):
