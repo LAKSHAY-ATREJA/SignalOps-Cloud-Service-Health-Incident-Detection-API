@@ -59,3 +59,34 @@ async def test_postgres_serializes_concurrent_idempotent_ingestion(postgres_clie
 
     assert sorted(response.status_code for response in responses) == [200] * 7 + [201]
     assert len({response.json()["id"] for response in responses}) == 1
+
+
+async def test_postgres_serializes_concurrent_incident_resolution(postgres_client):
+    created = await postgres_client.post(
+        "/services", json={"name": "resolution-api", "owner": "Platform Team"}
+    )
+    service_id = created.json()["id"]
+    for index, value in enumerate([99.0, 100.0, 101.0, 99.0, 100.0]):
+        await postgres_client.post(
+            f"/services/{service_id}/metrics",
+            json={"metric_name": "latency_ms", "value": value},
+            headers={"Idempotency-Key": f"resolution-baseline-{index:04d}"},
+        )
+    await postgres_client.post(
+        f"/services/{service_id}/metrics",
+        json={"metric_name": "latency_ms", "value": 140.0},
+        headers={"Idempotency-Key": "resolution-anomaly-0001"},
+    )
+    incident_id = (await postgres_client.get("/incidents")).json()[0]["id"]
+
+    responses = await asyncio.gather(
+        *[
+            postgres_client.patch(f"/incidents/{incident_id}/resolve")
+            for _ in range(8)
+        ]
+    )
+
+    assert {response.status_code for response in responses} == {200}
+    assert {response.json()["status"] for response in responses} == {"resolved"}
+    assert len({response.json()["resolved_at"] for response in responses}) == 1
+    assert responses[0].json()["resolved_at"] is not None
