@@ -33,6 +33,7 @@ SignalOps provides a simple monitoring pipeline:
 - Prometheus request, latency, ingestion-outcome, and incident counters
 - Correlation IDs and structured request logs using normalized route templates
 - Optional fail-closed API-key authorization using configured SHA-256 digests
+- RFC-style `application/problem+json` errors correlated with `X-Request-ID`
 - SQLAlchemy 2.x asynchronous persistence
 - Alembic schema migrations exercised in CI and container startup
 - PostgreSQL support for containerised deployments
@@ -239,6 +240,11 @@ API and metrics routes require the key.
 | `POST` | `/services/{service_id}/metrics` | Ingest a metric observation |
 | `GET` | `/incidents` | List incidents, optionally filtered by service |
 | `PATCH` | `/incidents/{incident_id}/resolve` | Resolve an incident |
+
+Validation, authorization and domain errors use a stable problem-details shape
+with `type`, `title`, `status`, `detail`, `instance` and `request_id`. Validation
+responses also include sanitized `location`, `message` and `code` entries; raw
+request values and internal exception text are not returned.
 
 ## Example workflow
 
