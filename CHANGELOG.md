@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-11-22 — Correlated problem responses
+
+- Added consistent `application/problem+json` responses for HTTP and validation errors.
+- Correlated every error body and response header with the same validated request ID.
+- Added sanitized validation issue metadata without echoing submitted values.
+- Added contract tests for validation, authorization misconfiguration and missing resources.
+
 ## 2026-11-22 — Fail-closed API authorization
 
 - Added optional API-key authorization for API and metrics routes.

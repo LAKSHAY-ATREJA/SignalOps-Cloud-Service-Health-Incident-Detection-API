@@ -4,9 +4,12 @@ import re
 import time
 import uuid
 from contextlib import asynccontextmanager
+from http import HTTPStatus
 from typing import Annotated
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Response, status
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
@@ -53,6 +56,7 @@ app = FastAPI(
 async def observe_request(request: Request, call_next):
     supplied_id = request.headers.get("X-Request-ID", "")
     request_id = supplied_id if REQUEST_ID_PATTERN.fullmatch(supplied_id) else str(uuid.uuid4())
+    request.state.request_id = request_id
     started = time.perf_counter()
     response = await call_next(request)
     elapsed = time.perf_counter() - started
@@ -73,6 +77,58 @@ async def observe_request(request: Request, call_next):
         )
     )
     return response
+
+
+def problem_response(
+    request: Request,
+    status_code: int,
+    detail: str,
+    *,
+    errors: list[dict] | None = None,
+    headers: dict[str, str] | None = None,
+) -> JSONResponse:
+    body: dict[str, object] = {
+        "type": "about:blank",
+        "title": HTTPStatus(status_code).phrase,
+        "status": status_code,
+        "detail": detail,
+        "instance": request.url.path,
+        "request_id": getattr(request.state, "request_id", None),
+    }
+    if errors:
+        body["errors"] = errors
+    return JSONResponse(
+        status_code=status_code,
+        content=body,
+        headers=headers,
+        media_type="application/problem+json",
+    )
+
+
+@app.exception_handler(HTTPException)
+async def handle_http_error(request: Request, exc: HTTPException) -> JSONResponse:
+    detail = exc.detail if isinstance(exc.detail, str) else "Request failed"
+    return problem_response(request, exc.status_code, detail, headers=exc.headers)
+
+
+@app.exception_handler(RequestValidationError)
+async def handle_validation_error(
+    request: Request, exc: RequestValidationError
+) -> JSONResponse:
+    errors = [
+        {
+            "location": [str(part) for part in error["loc"]],
+            "message": error["msg"],
+            "code": error["type"],
+        }
+        for error in exc.errors()
+    ]
+    return problem_response(
+        request,
+        status.HTTP_422_UNPROCESSABLE_CONTENT,
+        "Request validation failed",
+        errors=errors,
+    )
 
 
 @app.get("/health", include_in_schema=False)

@@ -86,6 +86,10 @@ async def test_metric_payload_rejects_unsafe_name(client, service_id):
         headers={"Idempotency-Key": "invalid-event-0001"},
     )
     assert response.status_code == 422
+    assert response.headers["content-type"].startswith("application/problem+json")
+    assert response.json()["detail"] == "Request validation failed"
+    assert response.json()["request_id"] == response.headers["X-Request-ID"]
+    assert response.json()["errors"][0]["code"] == "string_pattern_mismatch"
 
 
 async def test_anomalous_replay_creates_exactly_one_incident(client, service_id):
@@ -134,7 +138,8 @@ async def test_readiness_fails_closed_when_database_is_unavailable(client, monke
     response = await client.get("/health/ready")
 
     assert response.status_code == 503
-    assert response.json() == {"detail": "Database unavailable"}
+    assert response.json()["detail"] == "Database unavailable"
+    assert response.json()["request_id"] == response.headers["X-Request-ID"]
 
 
 @pytest.mark.parametrize("request_id", ["contains spaces", "x" * 65])
@@ -168,4 +173,23 @@ async def test_required_auth_without_valid_hashes_returns_503(client, monkeypatc
     monkeypatch.setattr("app.auth.settings.api_key_sha256", "not-a-digest")
     response = await client.get("/services", headers={"X-API-Key": "any-key"})
     assert response.status_code == 503
-    assert response.json() == {"detail": "Authentication is misconfigured"}
+    assert response.json()["detail"] == "Authentication is misconfigured"
+    assert response.json()["status"] == 503
+    assert response.json()["request_id"] == response.headers["X-Request-ID"]
+
+
+async def test_not_found_problem_is_correlated_without_internal_details(client):
+    response = await client.patch(
+        "/incidents/999/resolve", headers={"X-Request-ID": "incident-request-123"}
+    )
+    body = response.json()
+    assert response.status_code == 404
+    assert response.headers["content-type"].startswith("application/problem+json")
+    assert body == {
+        "type": "about:blank",
+        "title": "Not Found",
+        "status": 404,
+        "detail": "Incident not found",
+        "instance": "/incidents/999/resolve",
+        "request_id": "incident-request-123",
+    }
