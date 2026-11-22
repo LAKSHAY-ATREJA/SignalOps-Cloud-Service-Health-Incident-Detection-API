@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-11-23 — Correlated database failure contract
+
+- Added a centralized 503 problem response for SQLAlchemy failures.
+- Added a bounded retry hint and request-correlated structured logging.
+- Added regression coverage proving driver details are not exposed.
+
 ## 2026-11-22 — Reasoned incident resolution
 
 - Persisted a bounded operator reason with each incident resolution.

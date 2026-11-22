@@ -4,7 +4,7 @@ import httpx
 import pytest
 import pytest_asyncio
 from sqlalchemy.exc import OperationalError
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.database import Base, get_session
 from app.main import app
@@ -174,6 +174,31 @@ async def test_readiness_fails_closed_when_database_is_unavailable(client, monke
     assert response.status_code == 503
     assert response.json()["detail"] == "Database unavailable"
     assert response.json()["request_id"] == response.headers["X-Request-ID"]
+
+
+async def test_database_failure_uses_correlated_retryable_problem(client, monkeypatch):
+    async def fail_commit(_session):
+        raise OperationalError("COMMIT", {}, RuntimeError("credential detail"))
+
+    monkeypatch.setattr(AsyncSession, "commit", fail_commit)
+    response = await client.post(
+        "/services",
+        json={"name": "database-failure", "owner": "Platform Team"},
+        headers={"X-Request-ID": "database-failure-123"},
+    )
+
+    assert response.status_code == 503
+    assert response.headers["Retry-After"] == "5"
+    assert response.headers["content-type"].startswith("application/problem+json")
+    assert response.json() == {
+        "type": "about:blank",
+        "title": "Service Unavailable",
+        "status": 503,
+        "detail": "Database operation failed",
+        "instance": "/services",
+        "request_id": "database-failure-123",
+    }
+    assert "credential detail" not in response.text
 
 
 @pytest.mark.parametrize("request_id", ["contains spaces", "x" * 65])
